@@ -1,0 +1,142 @@
+diff --git a/fs/notify/fdinfo.c b/fs/notify/fdinfo.c
+--- a/fs/notify/fdinfo.c
++++ b/fs/notify/fdinfo.c
+@@ -106,6 +106,61 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
+ 	inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
+ 	inode = igrab(mark->inode);
+ 	if (inode) {
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++		if (susfs_is_current_app_uid()) {
++			bool is_fuse = false;
++			if (susfs_is_inode_sus_kstat(inode, &is_fuse)) {
++				unsigned long ino = inode->i_ino;
++				dev_t dev = inode->i_sb->s_dev;
++				susfs_sus_kstat_spoof_inotify_fdinfo(&ino, &dev);
++				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
++						inode_mark->wd, ino, dev,
++						mask, mark->ignored_mask);
++				show_mark_fhandle(m, inode);
++				seq_putc(m, '\n');
++				iput(inode);
++				return;
++			}
++		}
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++		if (likely(susfs_is_current_proc_umounted())) {
++			struct mount *mnt = real_mount(file->f_path.mnt);
++			if (mnt->mnt_id >= DEFAULT_KSU_MNT_ID) {
++				struct path path;
++				char *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
++				char *dpath;
++				if (!pathname) {
++					goto orig_flow;
++				}
++				dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
++				if (!dpath) {
++					goto out_kfree;
++				}
++				if (kern_path(dpath, 0, &path)) {
++					goto out_kfree;
++				}
++				if (!d_backing_inode(path.dentry)) {
++					goto out_path_put;
++				}
++				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
++							inode_mark->wd, d_backing_inode(path.dentry)->i_ino, d_backing_inode(path.dentry)->i_sb->s_dev,
++							mask, mark->ignored_mask);
++				show_mark_fhandle(m, d_backing_inode(path.dentry));
++				seq_putc(m, '\n');
++				path_put(&path);
++				kfree(pathname);
++				iput(inode);
++				return;
++out_path_put:
++				path_put(&path);
++out_kfree:
++				kfree(pathname);
++			}
++		}
++orig_flow:
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++
+ 		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+ 			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
+ 			   inotify_mark_user_mask(mark));
+diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
+--- a/fs/proc/cmdline.c
++++ b/fs/proc/cmdline.c
+@@ -26,8 +26,21 @@ static void proc_command_line_init(void) {
+ }
+ #endif
+ 
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
++extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
++#endif
++
+ static int cmdline_proc_show(struct seq_file *m, void *v)
+ {
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
++		susfs_spoof_cmdline_or_bootconfig(m);
++		seq_putc(m, '\n');
++		return 0;
++	}
++#endif
++
+ #ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
+ 	seq_printf(m, "%s\n", proc_command_line);
+ #else
+diff --git a/kernel/kallsyms.c b/kernel/kallsyms.c
+--- a/kernel/kallsyms.c
++++ b/kernel/kallsyms.c
+@@ -25,6 +25,10 @@
+ #include <linux/slab.h>
+ #include <linux/filter.h>
+ #include <linux/compiler.h>
++#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
++#include <linux/susfs_def.h>
++#endif // #ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
++
+ 
+ #include <asm/sections.h>
+ 
+@@ -585,8 +589,37 @@ static int s_show(struct seq_file *m, void *p)
+ 		seq_printf(m, KALLSYM_FMT " %c %s\t[%s]\n", value,
+ 			   type, iter->name, iter->module_name);
+ 	} else
++#ifndef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+ 		seq_printf(m, KALLSYM_FMT " %c %s\n", value,
+ 			   iter->type, iter->name);
++#else
++	{
++		if (susfs_starts_with(iter->name, "ksu_") ||
++			susfs_starts_with(iter->name, "__ksu_") ||
++			susfs_starts_with(iter->name, "susfs_") ||
++			susfs_starts_with(iter->name, "ksud") ||
++			susfs_starts_with(iter->name, "is_ksu_") ||
++			susfs_starts_with(iter->name, "is_manager_") ||
++			susfs_starts_with(iter->name, "escape_to_") ||
++			susfs_starts_with(iter->name, "setup_selinux") ||
++			susfs_starts_with(iter->name, "track_throne") ||
++			susfs_starts_with(iter->name, "on_post_fs_data") ||
++			susfs_starts_with(iter->name, "try_umount") ||
++			susfs_starts_with(iter->name, "kernelsu") ||
++			susfs_starts_with(iter->name, "__initcall__kmod_kernelsu") ||
++			susfs_starts_with(iter->name, "apply_kernelsu") ||
++			susfs_starts_with(iter->name, "handle_sepolicy") ||
++			susfs_starts_with(iter->name, "getenforce") ||
++			susfs_starts_with(iter->name, "setenforce") ||
++			susfs_starts_with(iter->name, "is_zygote"))
++		{
++			return 0;
++		}
++		seq_printf(m, "%pK %c %s\n", (void *)iter->value,
++			   iter->type, iter->name);
++	}
++#endif
++
+ 	return 0;
+ }
+ 
