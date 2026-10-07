@@ -140,3 +140,56 @@ diff --git a/kernel/kallsyms.c b/kernel/kallsyms.c
  	return 0;
  }
  
+diff --git a/fs/notify/fdinfo.c b/fs/notify/fdinfo.c
+--- a/fs/notify/fdinfo.c
++++ b/fs/notify/fdinfo.c
+@@ -115,7 +115,7 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
+ 				susfs_sus_kstat_spoof_inotify_fdinfo(&ino, &dev);
+ 				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+ 						inode_mark->wd, ino, dev,
+-						mask, mark->ignored_mask);
++						mark->mask, mark->ignored_mask);
+ 				show_mark_fhandle(m, inode);
+ 				seq_putc(m, '\n');
+ 				iput(inode);
+@@ -145,7 +145,7 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
+ 				}
+ 				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
+ 							inode_mark->wd, d_backing_inode(path.dentry)->i_ino, d_backing_inode(path.dentry)->i_sb->s_dev,
+-							mask, mark->ignored_mask);
++							mark->mask, mark->ignored_mask);
+ 				show_mark_fhandle(m, d_backing_inode(path.dentry));
+ 				seq_putc(m, '\n');
+ 				path_put(&path);
+diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
+--- a/fs/proc/cmdline.c
++++ b/fs/proc/cmdline.c
+@@ -1,3 +1,4 @@
++#include <linux/jump_label.h>
+ #include <linux/fs.h>
+ #include <linux/init.h>
+ #include <linux/proc_fs.h>
+diff --git a/fs/stat.c b/fs/stat.c
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -185,7 +183,7 @@ retry:
+ 
+ 	if (static_branch_likely(&ksu_su_compat_enabled)) {
+ 		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+-			ksu_handle_stat(&dfd, &fname, &flags);
++			ksu_handle_stat(&dfd, &fname, &flag);
+ 	}
+ 
+ orig_flow:
+diff --git a/include/linux/stat.h b/include/linux/stat.h
+index 075cb0c7eb2a..a9e1a1e8515d 100644
+--- a/include/linux/stat.h
++++ b/include/linux/stat.h
+@@ -32,6 +32,7 @@ struct kstat {
+ 	struct timespec	ctime;
+ 	unsigned long	blksize;
+ 	unsigned long long	blocks;
++ 	u32 	result_mask;
+ };
+ 
+ #endif
