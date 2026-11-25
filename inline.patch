@@ -67,3 +67,15 @@ diff --git a/fs/susfs.c b/fs/susfs.c
  #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
  DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
  #define SUSFS_LOGI(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_info("susfs:[%u][%d][%s] " fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
+diff --git a/fs/namei.c b/fs/namei.c
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -1654,7 +1654,7 @@ static struct dentry *lookup_dcache(struct qstr *name, struct dentry *dir,
+ 		if (d_in_lookup(dentry))
+ 			d_lookup_done(dentry);
+ 		dput(dentry);
+-		return NULL;
++        return ERR_PTR(-ENOENT);
+ 	}
+ #endif
+ 	return dentry;
